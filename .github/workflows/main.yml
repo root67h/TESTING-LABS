@@ -9,7 +9,7 @@ jobs:
 
     steps:
       # -------------------------------
-      # Create RDP User (Fixed Password)
+      # Setup RDP User (Error-Proof)
       # -------------------------------
       - name: Setup RDP User
         shell: pwsh
@@ -17,10 +17,16 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $user = "runneradmin"
-          $pass = "Str@ngeRDP#2026"   # 🔒 Fixed password
+          $pass = "Str@ngeRDP#2026"
 
+          Write-Host "Configuring user..."
+
+          # Create user if not exists
+          net user $user $pass /add 2>$null
           net user $user $pass
-          net localgroup administrators $user /add
+
+          # Add to admin group safely
+          net localgroup administrators $user /add 2>$null
 
           echo "RDP_USER=$user" >> $env:GITHUB_ENV
           echo "RDP_PASS=$pass" >> $env:GITHUB_ENV
@@ -60,12 +66,12 @@ jobs:
             if ($found) {
               $target = $found.FullName
             } else {
-              Write-Host "ERROR: Burp not found"
+              Write-Host "ERROR: Burp Suite not found!"
               exit 1
             }
           }
 
-          # Create Desktop Shortcut
+          # Create shortcut
           $desktop = "C:\Users\$env:USERNAME\Desktop"
           $wsh = New-Object -ComObject WScript.Shell
           $shortcut = $wsh.CreateShortcut("$desktop\Burp Suite.lnk")
@@ -105,7 +111,8 @@ jobs:
             exit 1
           }
 
-          Write-Host "Connecting..."
+          Write-Host "Connecting to Tailscale..."
+
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
             --auth-key="$authKey" `
             --hostname="gh-rdp-$env:GITHUB_RUN_ID" `
@@ -116,7 +123,7 @@ jobs:
           $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
 
           if (-not $ip) {
-            Write-Host "ERROR: No IP assigned"
+            Write-Host "ERROR: No Tailscale IP assigned"
             exit 1
           }
 
@@ -134,7 +141,6 @@ jobs:
           Write-Host "Password : $env:RDP_PASS"
           Write-Host "==========================="
 
-          # Keep session alive
           while ($true) {
             Start-Sleep 300
           }
