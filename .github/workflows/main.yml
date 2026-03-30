@@ -1,118 +1,91 @@
-- name: Install Burp Suite
-  shell: pwsh
-  run: |
-    $ErrorActionPreference = "Stop"
+name: RDPburp
 
-    # Burp Suite URL (Community Edition latest)
-    $url = "https://portswigger.net/burp/releases/download?product=community&version=latest&type=WindowsX64"
+on:
+  workflow_dispatch:
 
-    $exe = "$env:TEMP\burpsuite_installer.exe"
+jobs:
+  build:
+    runs-on: windows-latest
 
-    Write-Host "Downloading Burp Suite..."
-    Invoke-WebRequest -Uri $url -OutFile $exe
-    Write-Host "Download complete."
+    steps:
+      - name: Setup RDP User
+        shell: pwsh
+        run: |
+          $user = "runneradmin"
+          $pass = "P@ssw0rd123!"
 
-    Write-Host "Installing Burp Suite silently..."
-    Start-Process -FilePath $exe -ArgumentList "-q" -Wait -NoNewWindow
-    Start-Sleep 15
-    Write-Host "Installation finished."
+          net user $user $pass
+          net localgroup administrators $user /add
 
-    # Find executable
-    $target = "C:\Program Files\BurpSuiteCommunity\BurpSuiteCommunity.exe"
-
-    if (!(Test-Path $target)) {
-      Write-Host "Default path not found, searching..."
-      $found = Get-ChildItem "C:\Program Files\" -Recurse -Filter "BurpSuiteCommunity.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-      if ($found) {
-        $target = $found.FullName
-        Write-Host "Found at: $target"
-      } else {
-        Write-Host "ERROR: BurpSuite executable not found!"
-        exit 1
-      }
-    }
-
-    # Create shortcuts
-    $desktops = @(
-      "C:\Users\$env:USERNAME\Desktop",
-      "C:\Users\Public\Desktop",
-      "C:\Users\RDP\Desktop"
-    )
-
-    foreach ($desktop in $desktops) {
-      if (!(Test-Path $desktop)) {
-        New-Item -ItemType Directory -Path $desktop -Force | Out-Null
-      }
-
-      $wsh = New-Object -ComObject WScript.Shell
-      $shortcut = $wsh.CreateShortcut("$desktop\Burp Suite Community.lnk")
-      $shortcut.TargetPath = $target
-      $shortcut.WorkingDirectory = (Split-Path $target)
-      $shortcut.Description = "Burp Suite Community Edition"
-      $shortcut.Save()
-
-      Write-Host "Shortcut created at: $desktop"
-    }
+          echo "RDP_USER=$user" >> $env:GITHUB_ENV
+          echo "RDP_PASS=$pass" >> $env:GITHUB_ENV
 
 
-- name: Install Tailscale
-  shell: pwsh
-  run: |
-    $ErrorActionPreference = "Stop"
+      - name: Install Burp Suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
 
-    $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
-    $path = "$env:TEMP\tailscale.msi"
+          $url = "https://portswigger.net/burp/releases/download?product=community&version=latest&type=WindowsX64"
+          $exe = "$env:TEMP\burpsuite_installer.exe"
 
-    Write-Host "Downloading Tailscale..."
-    Invoke-WebRequest -Uri $url -OutFile $path
+          Invoke-WebRequest -Uri $url -OutFile $exe
+          Start-Process -FilePath $exe -ArgumentList "-q" -Wait
 
-    Write-Host "Installing Tailscale..."
-    Start-Process msiexec.exe -ArgumentList "/i `"$path`" /quiet /norestart" -Wait
+          $target = "C:\Program Files\BurpSuiteCommunity\BurpSuiteCommunity.exe"
 
-    Write-Host "Tailscale installed."
+          if (!(Test-Path $target)) {
+            $found = Get-ChildItem "C:\Program Files\" -Recurse -Filter "BurpSuiteCommunity.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              $target = $found.FullName
+            } else {
+              Write-Host "ERROR: Burp not found"
+              exit 1
+            }
+          }
 
-
-- name: Connect Tailscale
-  shell: pwsh
-  run: |
-    $ErrorActionPreference = "Stop"
-
-    $authKey = "${{ secrets.TAILSCALE_AUTH_KEY }}"
-
-    if ([string]::IsNullOrEmpty($authKey)) {
-      Write-Host "ERROR: TAILSCALE_AUTH_KEY not set!"
-      exit 1
-    }
-
-    Write-Host "Connecting to Tailscale..."
-
-    & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
-      --auth-key="$authKey" `
-      --hostname="gh-rdp-$env:GITHUB_RUN_ID" `
-      --accept-routes
-
-    Start-Sleep 10
-
-    $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-
-    if ([string]::IsNullOrEmpty($ip)) {
-      Write-Host "ERROR: No Tailscale IP!"
-      exit 1
-    }
-
-    echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
-    Write-Host "Connected! IP: $ip"
+          $desktop = "C:\Users\$env:USERNAME\Desktop"
+          $wsh = New-Object -ComObject WScript.Shell
+          $shortcut = $wsh.CreateShortcut("$desktop\Burp Suite.lnk")
+          $shortcut.TargetPath = $target
+          $shortcut.Save()
 
 
-- name: Show RDP Details
-  shell: pwsh
-  run: |
-    Write-Host "=============================="
-    Write-Host "RDP IP   : $env:TAILSCALE_IP"
-    Write-Host "USERNAME : $env:RDP_USER"
-    Write-Host "PASSWORD : $env:RDP_PASS"
-    Write-Host "=============================="
+      - name: Install Tailscale
+        shell: pwsh
+        run: |
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+          $path = "$env:TEMP\tailscale.msi"
 
-    # Keep runner alive
-    while ($true) { Start-Sleep 300 }
+          Invoke-WebRequest -Uri $url -OutFile $path
+          Start-Process msiexec.exe -ArgumentList "/i `"$path`" /quiet /norestart" -Wait
+
+
+      - name: Connect Tailscale
+        shell: pwsh
+        run: |
+          $authKey = "${{ secrets.TAILSCALE_AUTH_KEY }}"
+
+          if ([string]::IsNullOrEmpty($authKey)) {
+            Write-Host "Auth key missing"
+            exit 1
+          }
+
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --auth-key="$authKey" `
+            --hostname="gh-rdp-$env:GITHUB_RUN_ID"
+
+          Start-Sleep 10
+
+          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+
+
+      - name: Show RDP Details
+        shell: pwsh
+        run: |
+          Write-Host "IP: $env:TAILSCALE_IP"
+          Write-Host "USER: $env:RDP_USER"
+          Write-Host "PASS: $env:RDP_PASS"
+
+          while ($true) { Start-Sleep 300 }
