@@ -68,19 +68,40 @@ jobs:
           $sc2.Save()
           Write-Host "Shortcut also created at: $rdpDesktop"
 
-      - name: Connect Tailscale
-        uses: tailscale/github-action@v2
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          hostname: gh-rdp-${{ github.run_id }}
-
-      - name: Get Tailscale IP
+      - name: Install Tailscale
         shell: pwsh
         run: |
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $path = "$env:TEMP\tailscale.msi"
+          Write-Host "Downloading Tailscale..."
+          Invoke-WebRequest -Uri $url -OutFile $path -UseBasicParsing
+          Write-Host "Installing Tailscale..."
+          Start-Process msiexec.exe -ArgumentList "/i `"$path`" /quiet /norestart" -Wait
           Start-Sleep 10
+          Write-Host "Tailscale installed."
+
+      - name: Connect Tailscale
+        shell: pwsh
+        run: |
+          $authKey = "${{ secrets.TAILSCALE_AUTH_KEY }}"
+          if ([string]::IsNullOrEmpty($authKey)) {
+            Write-Host "ERROR: TAILSCALE_AUTH_KEY secret missing!"
+            exit 1
+          }
+          Write-Host "Connecting Tailscale..."
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --auth-key="$authKey" `
+            --hostname=gh-rdp-$env:GITHUB_RUN_ID `
+            --accept-routes `
+            --unattended
+          Start-Sleep 15
           $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+          if ([string]::IsNullOrEmpty($ip)) {
+            Write-Host "ERROR: IP nahi mila! OAuth secret check karo."
+            exit 1
+          }
           echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
-          Write-Host "Tailscale IP: $ip"
+          Write-Host "Connected! IP: $ip"
 
       - name: Show RDP Details
         shell: pwsh
