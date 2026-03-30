@@ -8,28 +8,19 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # -------------------------------
-      # Setup User (Error-proof)
-      # -------------------------------
       - name: Setup RDP User
         shell: pwsh
         run: |
           $user = "runneradmin"
-          $pass = "Str@ngeRDP#2026"
+          $pass = "Str@ngeRDP2026"   # ✅ <=14 chars (fixed)
 
-          # Create or update user
           net user $user $pass /add 2>$null
           net user $user $pass
-
-          # Add to admin (ignore error if already added)
           net localgroup administrators $user /add 2>$null
 
           echo "RDP_USER=$user" >> $env:GITHUB_ENV
           echo "RDP_PASS=$pass" >> $env:GITHUB_ENV
 
-      # -------------------------------
-      # Enable RDP
-      # -------------------------------
       - name: Enable RDP
         shell: pwsh
         run: |
@@ -38,9 +29,6 @@ jobs:
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      # -------------------------------
-      # Install Tailscale
-      # -------------------------------
       - name: Install Tailscale
         shell: pwsh
         run: |
@@ -50,16 +38,13 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $path
           Start-Process msiexec.exe -ArgumentList "/i `"$path`" /quiet /norestart" -Wait
 
-      # -------------------------------
-      # Connect Tailscale
-      # -------------------------------
       - name: Connect Tailscale
         shell: pwsh
         run: |
           $authKey = "${{ secrets.TAILSCALE_AUTH_KEY }}"
 
           if (-not $authKey) {
-            Write-Host "ERROR: Add TAILSCALE_AUTH_KEY in repo secrets"
+            Write-Host "Missing auth key"
             exit 1
           }
 
@@ -72,16 +57,11 @@ jobs:
           $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
           echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
 
-      # -------------------------------
-      # Show Details
-      # -------------------------------
-      - name: Show RDP Details
+      - name: Show Details
         shell: pwsh
         run: |
-          Write-Host "======================"
           Write-Host "IP   : $env:TAILSCALE_IP"
           Write-Host "USER : $env:RDP_USER"
           Write-Host "PASS : $env:RDP_PASS"
-          Write-Host "======================"
 
           while ($true) { Start-Sleep 300 }
