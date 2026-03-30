@@ -8,19 +8,27 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # -------------------------------
+      # Setup User (NO FAIL VERSION)
+      # -------------------------------
       - name: Setup RDP User
         shell: pwsh
         run: |
           $user = "runneradmin"
-          $pass = "Str@ngeRDP2026"   # ✅ <=14 chars (fixed)
+          $pass = "Str@ngeRDP2026"
 
-          net user $user $pass /add 2>$null
-          net user $user $pass
-          net localgroup administrators $user /add 2>$null
+          Write-Host "Setting up user..."
+
+          cmd /c "net user $user $pass /add"
+          cmd /c "net user $user $pass"
+          cmd /c "net localgroup administrators $user /add"
 
           echo "RDP_USER=$user" >> $env:GITHUB_ENV
           echo "RDP_PASS=$pass" >> $env:GITHUB_ENV
 
+      # -------------------------------
+      # Enable RDP
+      # -------------------------------
       - name: Enable RDP
         shell: pwsh
         run: |
@@ -29,6 +37,9 @@ jobs:
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
+      # -------------------------------
+      # Install Tailscale
+      # -------------------------------
       - name: Install Tailscale
         shell: pwsh
         run: |
@@ -38,13 +49,16 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $path
           Start-Process msiexec.exe -ArgumentList "/i `"$path`" /quiet /norestart" -Wait
 
+      # -------------------------------
+      # Connect Tailscale
+      # -------------------------------
       - name: Connect Tailscale
         shell: pwsh
         run: |
           $authKey = "${{ secrets.TAILSCALE_AUTH_KEY }}"
 
           if (-not $authKey) {
-            Write-Host "Missing auth key"
+            Write-Host "ERROR: Add TAILSCALE_AUTH_KEY in secrets"
             exit 1
           }
 
@@ -55,13 +69,24 @@ jobs:
           Start-Sleep 10
 
           $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
+          if (-not $ip) {
+            Write-Host "ERROR: No IP"
+            exit 1
+          }
+
           echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
 
-      - name: Show Details
+      # -------------------------------
+      # Show Details
+      # -------------------------------
+      - name: Show RDP Details
         shell: pwsh
         run: |
+          Write-Host "======================"
           Write-Host "IP   : $env:TAILSCALE_IP"
           Write-Host "USER : $env:RDP_USER"
           Write-Host "PASS : $env:RDP_PASS"
+          Write-Host "======================"
 
           while ($true) { Start-Sleep 300 }
